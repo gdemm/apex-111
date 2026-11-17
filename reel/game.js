@@ -134,10 +134,15 @@ function buildSprites() {
   const boss = chibi(Object.assign({}, ORC, { F: '#5a9a40', f: '#3a6a2a', B: '#4a3a5a', M: '#2e2440', b: '#f2c14e', H: '#e8dcb0', h: '#b8a880', I: '#ffffff', D: '#2e2440' }),
     [[1, 1, 'H'], [1, 2, 'H'], [2, 3, 'H'], [12, 1, 'H'], [12, 2, 'H'], [11, 3, 'H'], ...box(3, 4, 10, 5, 'y'), [5, 3, 'r'], [8, 3, 'r'], [4, 10, 'p'], [9, 10, 'p'], [4, 11, 'p'], [9, 11, 'p'], ...line(12, 4, 12, 16, 'n'), ...box(11, 2, 13, 6, 'g'), [11, 6, 'G'], [13, 2, 'G']]);
   const S2 = { sword, ranger, mage, guard, wolf, prism, grunt, axe, spear, boss };
+  const walkFrame = (src, side) => { const c = document.createElement('canvas'); c.width = src.width; c.height = src.height; const g = c.getContext('2d'); const h = src.height, w = src.width;
+    g.drawImage(src, 0, 0, w, h - 4, 0, 0, w, h - 4); const half = Math.floor(w / 2);
+    if (side) { g.drawImage(src, 0, h - 4, half, 4, 0, h - 5, half, 4); g.drawImage(src, half, h - 4, w - half, 4, half, h - 4, w - half, 4); }
+    else { g.drawImage(src, 0, h - 4, half, 4, 0, h - 4, half, 4); g.drawImage(src, half, h - 4, w - half, 4, half, h - 5, w - half, 4); }
+    return c; };
   for (const k in S2) {
     let s = S2[k];
     if (['grunt', 'axe', 'spear', 'boss'].includes(k)) s = flipSprite(s);
-    SPR[k] = s; SPR[k + '_w'] = whiteSprite(s);
+    SPR[k] = s; SPR[k + '_w'] = whiteSprite(s); SPR[k + '_a'] = walkFrame(s, 0); SPR[k + '_b'] = walkFrame(s, 1);
   }
   for (const k in SYM_ROWS) SPR['sym_' + k] = makeSprite(SYM_ROWS[k]);
   for (const k in ICON_ROWS) SPR['ic_' + k] = makeSprite(ICON_ROWS[k]);
@@ -179,7 +184,7 @@ const RELICS = [
 ];
 
 // ---------- audio ----------
-let AC = null, soundOn = true;
+let AC = null, soundOn = localStorage.getItem('reel_sound') !== '0';
 function beep(f, d, type, vol, slide) {
   if (!soundOn) return;
   try {
@@ -303,7 +308,7 @@ function finishSpin() {
   if (hits.length >= 3) { G.jackpotT = 2.2; G.shake = 0.5; G.crystals += 1; SFX.jackpot(); summons.unshift('prism'); G.msg = 'JACKPOT！棱晶骑士降临'; }
   else { SFX.line(); G.msg = hits.map(h => h.sym === 'coin' ? '+15金币' : UNIT[SYM_TO_UNIT[h.sym]].name).join(' · '); }
   G.msgT = 2;
-  if (gold) { G.gold += gold; floatText(70, 300, '+' + gold, '#f2c14e'); }
+  if (gold) { flyCoins(70, 260 + OFF, gold); floatText(70, 300 + OFF, '+' + gold, '#f2c14e'); }
   G.summonQueue = summons; G.summonT = 0.25;
 }
 function processSummons(dt) {
@@ -339,7 +344,7 @@ function spawnEnemy(type) {
 function endWave() {
   G.phase = 'reward';
   const R = G.relics; const bonus = 15 + 3 * G.wave + (R.gold ? 5 * R.gold : 0);
-  G.gold += bonus; if (G.wave % 5 === 0) G.crystals += 1;
+  flyCoins(W / 2, FIELD.y + 90, bonus); if (G.wave % 5 === 0) G.crystals += 1;
   for (const u of G.units) u.hp = u.maxhp;
   G.shots = [];
   if (G.wave >= 10) return gameOver(true);
@@ -377,7 +382,7 @@ function attack(a, t, dt) {
   else {
     if (a.aoe) { const foes = a.team === 'u' ? G.enemies : G.units; for (const f of foes) if (!f.dead && Math.hypot(f.x - t.x, f.y - t.y) < a.aoe + 6) damage(f, a.atk, a); }
     else damage(t, a.atk, a);
-    a.lunge = 0.12; SFX.hit();
+    a.lunge = 0.12; SFX.hit(); G.parts.push({ slash: true, x: t.x, y: t.y - (t.big ? 30 : 14), t: 0.18, dir: a.team === 'u' ? 1 : -1, big: !!a.aoe });
   }
 }
 function updateActor(a, dt, foes) {
@@ -413,6 +418,10 @@ function updateBattle(dt) {
 }
 
 // ---------- fx helpers ----------
+function flyCoins(x, y, amount) {
+  const n = Math.min(12, 3 + Math.floor(amount / 5)), per = amount / n; let left = amount;
+  for (let i = 0; i < n; i++) { const v = i === n - 1 ? left : Math.round(per); left -= v; G.parts.push({ coin: true, x: x + rnd(-10, 10), y: y + rnd(-6, 6), t: 2, fly: 0.35 + i * 0.05, val: v }); }
+}
 function floatText(x, y, t, c) { G.floats.push({ x, y, t, c, life: 0.9 }); }
 let toastMsg = '', toastT = 0;
 function toast(m) { toastMsg = m; toastT = 1.8; }
@@ -506,7 +515,7 @@ function drawHUD() {
   for (const [ic, v, c] of items) {
     const s = SPR[ic], tw = String(v).length * 4.6 + 4, bw = s.width + tw + 4;
     rect(x, 3, bw, 13, '#120e16'); rect(x + 1, 4, bw - 2, 11, '#3a3044'); rect(x + 1, 4, bw - 2, 1, '#54445e');
-    ctx.drawImage(s, x + 2, 10 - s.height / 2 | 0, s.width, s.height); text(String(v), x + s.width + 4, 10, 7, c, 'left'); x += bw + 2;
+    const pul = ic === 'ic_coin' && G.coinPulse > 0 ? 1 : 0; if (pul) rect(x + 1, 4, bw - 2, 11, '#6a5420'); ctx.drawImage(s, x + 2 - pul, (10 - s.height / 2 | 0) - pul, s.width + pul * 2, s.height + pul * 2); text(String(v), x + s.width + 4, 10, 7, c, 'left'); x += bw + 2;
   }
   const nxt = G.wave % 5 === 0 ? '本波' : (5 - G.wave % 5) + '波后';
   text('精英 ' + nxt, W - 3, 10, 6.5, '#ff8a7a', 'right');
@@ -553,7 +562,8 @@ function drawCabinet() {
       ctx.fillStyle = 'rgba(40,30,50,0.25)'; ctx.fillRect(x, top, cw2, rh * 3);
     } else {
       const grid = G.spin ? G.spin.result : G.reels;
-      for (let r = 0; r < 3; r++) { const lit = G.flash.some(f => f.cells.some(([cc, rr]) => cc === c && rr === r)) && Math.floor(G.t * 8) % 2; cell(grid[c][r], top + r * rh, lit); }
+      const bo = G.bounce && G.bounce[c] > 0 ? Math.round(Math.sin(G.bounce[c] / 0.18 * Math.PI) * 4) : 0;
+      for (let r = -1; r < 4; r++) { if (r < 0 || r > 2) { if (bo && r < 0) cell(grid[c][2], top - rh + bo, false); continue; } const lit = G.flash.some(f => f.cells.some(([cc, rr]) => cc === c && rr === r)) && Math.floor(G.t * 8) % 2; cell(grid[c][r], top + r * rh + bo, lit); }
     }
     // reel shading top/bottom
     ctx.fillStyle = 'rgba(20,14,26,0.35)'; ctx.fillRect(x + 1, top, cw2 - 2, 4); ctx.fillRect(x + 1, top + rh * 3 - 4, cw2 - 2, 4);
@@ -643,7 +653,12 @@ function drawField(dt) {
   else { for (let i = 0; i < 8; i++) { const fx = FIELD.x + (i * 37 + Math.sin(G.t * 0.7 + i) * 12 + 400) % FIELD.w, fy = FIELD.y + 30 + SKY + (i * 23) % 60 + Math.sin(G.t * 1.3 + i * 2) * 6; ctx.globalAlpha = 0.5 + 0.5 * Math.sin(G.t * 3 + i); rect(fx, fy, 2, 2, '#bff4ff'); ctx.globalAlpha = 1; } }
   // spawn portal
   const px = FIELD.x + FIELD.w - 14, py = GROUND_TOP + 30;
-  if (G.phase === 'battle' && G.toSpawn.length) { ctx.globalAlpha = 0.5 + 0.3 * Math.sin(G.t * 6); rect(px - 5, py - 30, 12, 60, '#2a1030'); rect(px - 3, py - 26, 8, 52, '#7a2a6a'); ctx.globalAlpha = 1; }
+  if (G.phase === 'battle' && G.toSpawn.length) {
+    ctx.save(); ctx.translate(px, py);
+    for (let i = 0; i < 4; i++) { ctx.fillStyle = ['#1a0820', '#3a1050', '#6a2a8a', '#a050c0'][i]; ctx.beginPath(); ctx.ellipse(0, 0, 10 - i * 2.2, 28 - i * 6, 0, 0, 7); ctx.fill(); }
+    for (let i = 0; i < 6; i++) { const a = G.t * 3 + i; rect(Math.cos(a) * 8, Math.sin(a) * 24, 2, 2, '#e0a0ff'); }
+    ctx.restore();
+  }
   // actors sorted by y
   const actors = G.units.concat(G.enemies).sort((a, b) => a.y - b.y);
   for (const a of actors) drawActor(a);
@@ -653,7 +668,7 @@ function drawField(dt) {
     else { ctx.save(); ctx.translate(s.x, s.y); ctx.rotate(s.ang || 0); rect(-4, 0, 7, 1, s.kind === 'spear' ? '#9a6a3a' : '#e8dcb0'); rect(3, -1, 2, 3, '#c4ccd4'); ctx.restore(); }
   }
   // particles
-  for (const p of G.parts) { if (p.ring) { ctx.strokeStyle = 'rgba(200,160,255,' + (p.t / 0.3) + ')'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1.2 - p.t), 0, 7); ctx.stroke(); } else rect(p.x, p.y, 2, 2, p.c); }
+  for (const p of G.parts) { if (p.slash) { const k = p.t / 0.18, r = p.big ? 12 : 8; ctx.strokeStyle = 'rgba(255,255,255,' + k + ')'; ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(p.x - p.dir * 4, p.y, r, p.dir > 0 ? -1.2 : Math.PI - 0.6, p.dir > 0 ? 0.6 : Math.PI + 1.2); ctx.stroke(); continue; } if (p.coin) continue; if (p.ring) { ctx.strokeStyle = 'rgba(200,160,255,' + (p.t / 0.3) + ')'; ctx.lineWidth = 1.5; ctx.beginPath(); ctx.arc(p.x, p.y, p.r * (1.2 - p.t), 0, 7); ctx.stroke(); } else rect(p.x, p.y, 2, 2, p.c); }
   // floats
   for (const f of G.floats) { ctx.globalAlpha = Math.min(1, f.life * 2); text(f.t, f.x, f.y, 7, f.c, 'center'); ctx.globalAlpha = 1; }
   // jackpot rays
@@ -670,6 +685,7 @@ function drawField(dt) {
   waveRibbon();
   // phase label
   text(G.phase === 'battle' ? '战斗中' : G.phase === 'prep' ? '备战 · 点单位查看' : '', FIELD.x + 4, FIELD.y + FIELD.h - 6, 6.5, '#fff', 'left');
+  button('sound', FIELD.x + 4, FIELD.y + 4, 20, 14, soundOn ? '音' : '静', null, '#574a63');
   button('speed', FIELD.x + FIELD.w - 24, FIELD.y + 4, 20, 14, G.speed + 'x', null, '#574a63');
   // banner
   if (G.bannerT > 0) { const a = Math.min(1, G.bannerT * 2); ctx.globalAlpha = a; const red = G.banner !== '第' + G.wave + '波'; rect(FIELD.x, FIELD.y + 60, FIELD.w, 22, red ? 'rgba(138,42,42,0.85)' : 'rgba(26,20,32,0.8)'); text(G.banner, FIELD.x + FIELD.w / 2, FIELD.y + 71, 12, red ? '#ffd0c0' : '#f2c14e', 'center'); ctx.globalAlpha = 1; }
@@ -694,7 +710,9 @@ function drawActor(a) {
   ctx.fillStyle = 'rgba(0,0,0,0.25)'; ctx.fillRect(Math.round(x - 5 * sc), Math.round(a.y - 1), 10 * sc, 3);
   if (isU && a === G.sel) { const fl = Math.floor(G.t * 4) % 2; ctx.strokeStyle = fl ? '#f2c14e' : '#fff3a0'; ctx.lineWidth = 1; ctx.beginPath(); ctx.ellipse(x, a.y, 11, 4, 0, 0, 7); ctx.stroke(); }
   if (isU && a.type === 'prism') { ctx.globalAlpha = 0.35 + 0.2 * Math.sin(G.t * 5); const hue = (G.t * 120) % 360; ctx.fillStyle = 'hsl(' + hue + ',90%,70%)'; ctx.beginPath(); ctx.arc(x, y - 15 - bob, 15, 0, 7); ctx.fill(); ctx.globalAlpha = 1; }
-  spr(key, x + lunge, y - bob, sc); if (a.hit > 0.05) { ctx.globalAlpha = 0.65; spr(key + '_w', x + lunge, y - bob, sc); ctx.globalAlpha = 1; }
+  const walking = moving && Math.hypot(a.x - (a.px ?? a.x), a.y - (a.py ?? a.y)) > 0.01; a.px = a.x; a.py = a.y;
+  const frame = walking ? (Math.floor(G.t * 8 + a.bob) % 2 ? '_a' : '_b') : '';
+  spr(key + frame, x + lunge, y - bob, sc); if (a.hit > 0.05) { ctx.globalAlpha = 0.65; spr(key + '_w', x + lunge, y - bob, sc); ctx.globalAlpha = 1; }
   // stars
   if (isU && a.star > 1) for (let i = 0; i < a.star; i++) drawStar(x - 5 + i * 5, y - 35 - bob);
   // hp bar
@@ -736,6 +754,12 @@ function drawEnd() {
   text('剩余军团 ' + G.units.length + '  ·  遗物 ' + Object.keys(G.relics).length, W / 2, 224, 7.5, '#c9b98a', 'center');
   button('restart', 60, 242, 120, 34, '再来一局', null, '#b8862a');
 }
+function drawHints() {
+  if (G.phase !== 'prep' || G.sel || G.pending || G.spin || G.wave > 1) return;
+  const by = 400 + OFF, bounce = Math.round(Math.abs(Math.sin(G.t * 5)) * 4);
+  const target = G.spinsThisWave < 2 && G.gold >= spinCost() ? 61 : 179;
+  const y = by - 12 - bounce; rect(target - 4, y - 6, 9, 5, '#120e16'); rect(target - 3, y - 6, 7, 4, '#fff3a0'); rect(target - 2, y - 2, 5, 2, '#fff3a0'); rect(target - 1, y, 3, 2, '#fff3a0'); rect(target, y + 2, 1, 1, '#fff3a0');
+}
 function drawToast() { if (toastT <= 0) return; ctx.globalAlpha = Math.min(1, toastT * 3); const w = 8 + toastMsg.length * 8; rect(W / 2 - w / 2, FIELD.y + 22, w, 16, 'rgba(18,14,22,0.9)'); text(toastMsg, W / 2, FIELD.y + 30, 7.5, '#fff', 'center'); ctx.globalAlpha = 1; }
 function drawTitleBar() { text('最佳 ' + G.best + ' 波', W - 6, 212 + 0, 0.1, '#000', 'right'); }
 
@@ -744,11 +768,11 @@ let last = performance.now();
 function tick(now) {
   let dt = Math.min(0.05, (now - last) / 1000); last = now;
   G.t += dt; toastT -= dt; G.msgT -= dt; G.bannerT -= dt; G.jackpotT -= dt; G.shake = Math.max(0, G.shake - dt);
-  G.lever = Math.max(0, G.lever - dt * 2.5);
+  G.lever = Math.max(0, G.lever - dt * 2.5); G.coinPulse = (G.coinPulse || 0) - dt; if (G.bounce) G.bounce = G.bounce.map(b => b - dt);
   G.flash.forEach(f => f.t -= dt); G.flash = G.flash.filter(f => f.t > 0);
   if (G.spin) {
     G.spin.t += dt;
-    for (let c = 0; c < 3; c++) if (!G.spin.stopped[c] && G.spin.t >= G.spin.stopAt[c]) { G.spin.stopped[c] = true; SFX.stop(); }
+    for (let c = 0; c < 3; c++) if (!G.spin.stopped[c] && G.spin.t >= G.spin.stopAt[c]) { G.spin.stopped[c] = true; G.bounce = G.bounce || [0, 0, 0]; G.bounce[c] = 0.18; SFX.stop(); }
     if (G.spin.stopped[2]) finishSpin();
   }
   processSummons(dt);
@@ -756,7 +780,7 @@ function tick(now) {
   if (G.phase === 'prep') for (const u of G.units) if (!u.drop) { u.x += (u.hx - u.x) * Math.min(1, dt * 6); u.y += (u.hy - u.y) * Math.min(1, dt * 6); }
   const steps = G.phase === 'battle' ? G.speed : 1;
   for (let i = 0; i < steps; i++) if (G.phase === 'battle') updateBattle(dt);
-  for (const p of G.parts) { p.t -= dt; if (!p.ring) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 120 * dt; } }
+  for (const p of G.parts) { if (p.coin) { p.fly -= dt; if (p.fly <= 0) { const tx = 10, ty = 10, dx = tx - p.x, dy = ty - p.y, L = Math.hypot(dx, dy); if (L < 6) { p.t = 0; G.gold += p.val; G.coinPulse = 0.2; beep(1200 + rnd(0, 300), 0.03, 'square', 0.02); } else { const sp = Math.min(L, 320 * dt); p.x += dx / L * sp; p.y += dy / L * sp; } } else { p.y -= 20 * dt; } continue; } p.t -= dt; if (!p.slash && !p.ring) { p.x += p.vx * dt; p.y += p.vy * dt; p.vy += 120 * dt; } }
   G.parts = G.parts.filter(p => p.t > 0);
   for (const f of G.floats) { f.life -= dt; f.y -= 14 * dt; } G.floats = G.floats.filter(f => f.life > 0);
   render(); requestAnimationFrame(tick);
@@ -765,7 +789,7 @@ function render() {
   ctx.setTransform(S * DPR, 0, 0, S * DPR, 0, 0); ctx.imageSmoothingEnabled = false;
   ctx.drawImage(STONE, 0, 0);
   for (const k in BTN) delete BTN[k];
-  drawHUD(); drawField(); drawCabinet(); drawButtons(); drawUnitPanel(); drawReward(); drawEnd(); drawToast();
+  drawHUD(); drawField(); drawCabinet(); drawButtons(); for (const p of G.parts) if (p.coin) { rect(p.x - 3, p.y - 3, 6, 6, '#120e16'); rect(p.x - 2, p.y - 2, 4, 4, '#f2c14e'); rect(p.x - 2, p.y - 2, 2, 1, '#fff6c0'); rect(p.x, p.y, 2, 2, '#b8862a'); } drawHints(); drawUnitPanel(); drawReward(); drawEnd(); drawToast();
   if (G.absorbMode && G.sel) { rect(0, 214, W, 0, '#000'); rect(FIELD.x, FIELD.y + FIELD.h - 16, FIELD.w, 14, 'rgba(59,111,196,0.85)'); text('点选另一个单位作为养料（点空白取消）', FIELD.x + FIELD.w / 2, FIELD.y + FIELD.h - 9, 7, '#fff', 'center'); }
 }
 
@@ -791,6 +815,7 @@ cv.addEventListener('pointerup', e => {
 function onButton(id) {
   if (id === 'spin' || id === 'lever') return doSpin();
   if (id === 'fight') return startWave();
+  if (id === 'sound') { soundOn = !soundOn; localStorage.setItem('reel_sound', soundOn ? '1' : '0'); return; }
   if (id === 'speed') { G.speed = G.speed === 1 ? 2 : G.speed === 2 ? 3 : 1; return; }
   if (id === 'absorb') { G.absorbMode = true; return; }
   if (id === 'close') { G.sel = null; return; }
