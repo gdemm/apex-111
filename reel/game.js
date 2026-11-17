@@ -319,9 +319,9 @@ function processSummons(dt) {
 
 // ---------- waves ----------
 function waveComp(w) {
-  const list = []; const judge = w % 5 === 0 && w !== 10; const n = Math.round((4 + w * 1.5) * (judge ? 1.6 : 1));
+  const list = []; const judge = w % 5 === 0 && w % 10 !== 0; const n = Math.round((4 + w * 1.5) * (judge ? 1.6 : 1));
   for (let i = 0; i < n; i++) { const r = Math.random(); list.push(w >= 3 && r < 0.25 ? 'spear' : w >= 2 && r < 0.55 ? 'axe' : 'grunt'); }
-  if (w === 10) { list.length = 8; list.push('boss'); }
+  if (w % 10 === 0) { list.length = 8 + (w / 10 - 1) * 3; list.push('boss'); for (let k = 10; k < w; k += 10) list.push('boss'); }
   return list;
 }
 function startWave() {
@@ -329,8 +329,8 @@ function startWave() {
   if (!G.units.length) { toast('至少需要一个单位'); return; }
   G.sel = null; G.absorbMode = false;
   G.phase = 'battle'; G.toSpawn = waveComp(G.wave); G.need = G.toSpawn.length; G.kills = 0; G.spawnT = 0.3;
-  const judge = G.wave % 5 === 0 && G.wave !== 10;
-  G.banner = G.wave === 10 ? '首领波 · 巨魔酋长' : judge ? '审判波' : '第' + G.wave + '波'; G.bannerT = 1.8;
+  const judge = G.wave % 5 === 0 && G.wave % 10 !== 0;
+  G.banner = G.wave % 10 === 0 ? '首领波 · 巨魔酋长' + (G.wave > 10 ? ' ×' + G.wave / 10 : '') : judge ? '审判波' : (G.endless ? '无尽 · ' : '') + '第' + G.wave + '波'; G.bannerT = 1.8;
   for (const u of G.units) { u.x = u.hx; u.y = u.hy; u.cd = rnd(0, 0.4); }
   beep(330, 0.12); setTimeout(() => beep(440, 0.2), 120);
 }
@@ -347,7 +347,7 @@ function endWave() {
   flyCoins(W / 2, FIELD.y + 90, bonus); if (G.wave % 5 === 0) G.crystals += 1;
   for (const u of G.units) u.hp = u.maxhp;
   G.shots = [];
-  if (G.wave >= 10) return gameOver(true);
+  if (G.wave === 10 && !G.endless) return gameOver(true);
   G.rewardGold = bonus; G.rewards = rollRewards();
 }
 function rollRewards() { const pool = RELICS.filter(r => !(r.once && G.relics[r.id] >= 3)); const out = []; while (out.length < 3) { const r = pick(pool); if (!out.includes(r)) out.push(r); } return out; }
@@ -357,12 +357,12 @@ function takeReward(r) {
   G.units.forEach(refreshStats); G.units.forEach(u => u.hp = u.maxhp);
   G.rewards = null; G.wave++; G.spinsThisWave = 0; G.phase = 'prep'; layoutUnits();
   for (const u of G.units) { u.x = u.hx; u.y = u.hy; }
-  if (G.wave > G.best) { G.best = G.wave - 1; }
+  if (G.wave - 1 > G.best) { G.best = G.wave - 1; localStorage.setItem('reel_best', G.best); }
   toast('获得 ' + r.name);
 }
 function gameOver(win) {
   G.phase = 'end'; G.ended = { win, wave: G.wave };
-  const reached = win ? 10 : G.wave - 1; if (reached > G.best) { G.best = reached; localStorage.setItem('reel_best', reached); }
+  const reached = win ? G.wave : G.wave - 1; if (reached > G.best) { G.best = reached; localStorage.setItem('reel_best', reached); }
   if (win) SFX.jackpot(); else SFX.bad();
 }
 
@@ -525,7 +525,7 @@ function waveRibbon() {
   rect(tx - 54, y, 108, 14, '#120e16'); rect(tx - 53, y + 1, 106, 12, '#3a2a48'); rect(tx - 53, y + 1, 106, 1, '#5a4670');
   for (const sx of [-1, 1]) { const ex = tx + sx * 54; for (let i = 0; i < 7; i++) rect(sx < 0 ? ex - 8 + i : ex + 1, y + i, 8 - i, 14 - i * 2, i ? '#2a1e36' : '#120e16'); }
   for (let i = -2; i <= 2; i++) {
-    const w = G.wave + i; if (w < 1 || w > 10) continue; const big = i === 0, elite = w % 5 === 0, xx = tx + i * 20;
+    const w = G.wave + i; if (w < 1 || (w > 10 && !G.endless)) continue; const big = i === 0, elite = w % 5 === 0, xx = tx + i * 20;
     if (elite && !big) { rect(xx - 4, y + 4, 8, 6, '#8a2a2a'); rect(xx - 5, y + 2, 2, 3, '#e8dcb0'); rect(xx + 3, y + 2, 2, 3, '#e8dcb0'); rect(xx - 2, y + 6, 1, 1, '#ffd060'); rect(xx + 1, y + 6, 1, 1, '#ffd060'); }
     else text(String(w), xx, y + 7.5, big ? 11 : 7, big ? '#ffffff' : '#9a8aa8', 'center');
   }
@@ -749,10 +749,11 @@ function drawEnd() {
   const win = G.ended.win;
   frame(24, 120, 192, 170, '#2b2433', win ? '#b8862a' : '#8a2a2a', '#8a7a96');
   spr(win ? 'prism' : 'boss', W / 2, 176, 2.5);
-  text(win ? '胜利！巨魔酋长倒下了' : '军团覆灭', W / 2, 190, 12, win ? '#f2c14e' : '#ff8a7a', 'center');
+  text(win ? '胜利！巨魔酋长倒下了' : G.endless ? '无尽止步' : '军团覆灭', W / 2, 190, 12, win ? '#f2c14e' : '#ff8a7a', 'center');
   text('到达第 ' + G.ended.wave + ' 波  ·  最佳 ' + G.best + ' 波', W / 2, 210, 7.5, '#e8e0d0', 'center');
   text('剩余军团 ' + G.units.length + '  ·  遗物 ' + Object.keys(G.relics).length, W / 2, 224, 7.5, '#c9b98a', 'center');
-  button('restart', 60, 242, 120, 34, '再来一局', null, '#b8862a');
+  if (win) { button('endless', 32, 242, 84, 34, '继续无尽', '敌人越来越强', '#6a3a9a'); button('restart', 124, 242, 84, 34, '再来一局', null, '#b8862a'); }
+  else button('restart', 60, 242, 120, 34, '再来一局', null, '#b8862a');
 }
 function drawHints() {
   if (G.phase !== 'prep' || G.sel || G.pending || G.spin || G.wave > 1) return;
@@ -820,6 +821,7 @@ function onButton(id) {
   if (id === 'absorb') { G.absorbMode = true; return; }
   if (id === 'close') { G.sel = null; return; }
   if (id === 'restart') { newGame(); return; }
+  if (id === 'endless') { G.endless = true; G.ended = null; G.phase = 'reward'; G.rewardGold = 15 + 3 * G.wave; G.rewards = rollRewards(); G.banner = '无尽模式开启'; G.bannerT = 1.8; return; }
   if (id.startsWith('rw') && G.rewards) return takeReward(G.rewards[+id.slice(2)]);
 }
 window.addEventListener('keydown', e => { if (e.code === 'Space') doSpin(); if (e.key === 'Enter') startWave(); });
